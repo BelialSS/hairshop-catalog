@@ -13,76 +13,33 @@
             <p>Премиальные волосы для наращивания</p>
         </header>
 
-        <div class="main-content">
-            <aside class="sidebar">
-                <div class="filter-section">
-                    <h3>🔍 Фильтры</h3>
-                    
-                    <div class="filter-group">
-                        <label>Категория:</label>
-                        <select id="categoryFilter">
-                            <option value="">Все категории</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Длина:</label>
-                        <select id="lengthFilter">
-                            <option value="">Все длины</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Цвет:</label>
-                        <select id="colorFilter">
-                            <option value="">Все цвета</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Цена:</label>
-                        <div class="price-range">
-                            <input type="number" id="minPrice" placeholder="От">
-                            <input type="number" id="maxPrice" placeholder="До">
-                        </div>
-                    </div>
-                    
-                    <button id="applyFilters" class="btn-primary">Применить фильтры</button>
-                    <button id="resetFilters" class="btn-secondary">Сбросить</button>
+        <div class="catalog">
+            <h2>🛍 Каталог волос</h2>
+            <div class="categories">
+                <div class="category-card">
+                    <h3>Бразильские волосы</h3>
+                    <p>От 4,500 ₽</p>
                 </div>
-            </aside>
-
-            <main class="products-grid">
-                <div class="products-header">
-                    <h2>Каталог волос</h2>
-                    <div class="sort-options">
-                        <select id="sortSelect">
-                            <option value="name">По названию</option>
-                            <option value="price_asc">По цене (возр.)</option>
-                            <option value="price_desc">По цене (убыв.)</option>
-                            <option value="rating">По рейтингу</option>
-                        </select>
-                    </div>
+                <div class="category-card">
+                    <h3>Перуанские волосы</h3>
+                    <p>От 3,800 ₽</p>
                 </div>
-                
-                <div id="productsContainer" class="products-container">
-                    <!-- Товары будут загружены через JavaScript -->
+                <div class="category-card">
+                    <h3>Монгольские волосы</h3>
+                    <p>От 5,200 ₽</p>
                 </div>
-                
-                <div class="pagination">
-                    <button id="prevPage" class="btn-secondary">← Назад</button>
-                    <span id="pageInfo">Страница 1</span>
-                    <button id="nextPage" class="btn-secondary">Вперед →</button>
+                <div class="category-card">
+                    <h3>Европейские волосы</h3>
+                    <p>От 4,000 ₽</p>
                 </div>
-            </main>
+            </div>
         </div>
-    </div>
 
-    <!-- Модальное окно товара -->
-    <div id="productModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <div id="productDetails"></div>
+        <div class="filters">
+            <h3>🔍 Фильтры:</h3>
+            <p>• Длина: 14-16см, 18-20см, 22-24см, 26-28см, 30+см</p>
+            <p>• Цвет: Натуральные, Окрашенные, Омбре</p>
+            <p>• Вес: 50г, 100г, 150г, 200г</p>
         </div>
     </div>
 
