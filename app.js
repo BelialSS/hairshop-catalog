@@ -1,6 +1,8 @@
 class HairShopCatalog {
     constructor() {
-        this.CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vS800Y_zN10Ys9uQfkEB67ZqlWMobbZTAkIu4l4X-a2rp1e80jlrFfhQV1m18n5hHCBANXc7VjRhIo5/pub?output=csv";
+        // Используем CORS прокси для обхода блокировки
+        this.CSV_URL = "https://corsproxy.io/?https://docs.google.com/spreadsheets/d/e/2PACX-1vS800Y_zN10Ys9uQfkEB67ZqlWMobbZTAkIu4l4X-a2rp1e80jlrFfhQV1m18n5hHCBANXc7VjRhIo5/pub?output=csv";
+        
         this.products = [];
         this.filters = {
             minLength: 14,
@@ -14,46 +16,79 @@ class HairShopCatalog {
     }
 
     async init() {
+        // Показываем заглушку сразу
+        this.renderLoading();
         await this.loadProductsFromCSV();
         this.setupEventListeners();
-        this.updateRangeSliders();
     }
 
     async loadProductsFromCSV() {
         try {
-            console.log('📥 Loading products from Google Sheets...');
+            console.log('📥 Loading from:', this.CSV_URL);
             const response = await fetch(this.CSV_URL);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
             const csvText = await response.text();
+            console.log('📄 CSV content:', csvText.substring(0, 200));
             
-            // Парсим CSV
             this.products = this.parseCSV(csvText);
-            console.log('✅ Loaded products:', this.products);
+            console.log('✅ Parsed products:', this.products);
             
-            this.renderProducts();
-            this.updateFilterRanges();
+            if (this.products.length > 0) {
+                this.updateFilterRanges();
+                this.renderProducts();
+            } else {
+                this.renderNoProducts();
+            }
             
         } catch (error) {
             console.error('❌ Error loading CSV:', error);
-            this.showErrorMessage();
+            this.renderError(error.message);
         }
     }
 
     parseCSV(csvText) {
-        const lines = csvText.split('\n').filter(line => line.trim());
-        if (lines.length < 2) return [];
+        const lines = csvText.split('\n').filter(line => line.trim().length > 0);
+        console.log('📝 Total lines:', lines.length);
         
-        // Получаем заголовки
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        if (lines.length < 2) {
+            console.warn('⚠️ Not enough lines in CSV');
+            return [];
+        }
         
-        // Парсим данные
+        // Парсим заголовки
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+        console.log('🏷 Headers:', headers);
+        
         const products = [];
+        
         for (let i = 1; i < lines.length; i++) {
-            const values = this.parseCSVLine(lines[i]);
-            if (values.length !== headers.length) continue;
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            const values = this.parseCSVLine(line);
+            console.log(`📊 Line ${i}:`, values);
+            
+            if (values.length !== headers.length) {
+                console.warn(`⚠️ Line ${i} has ${values.length} values, expected ${headers.length}`);
+                continue;
+            }
             
             const product = {};
+            let hasData = false;
+            
             headers.forEach((header, index) => {
-                let value = values[index]?.trim() || '';
+                let value = values[index] ? values[index].trim().replace(/"/g, '') : '';
+                
+                // Пропускаем пустые строки
+                if (value === '' && header !== 'old_price') {
+                    return;
+                }
+                
+                hasData = true;
                 
                 // Конвертируем типы данных
                 if (header === 'length' || header === 'price') {
@@ -65,10 +100,11 @@ class HairShopCatalog {
                 product[header] = value;
             });
             
-            // Добавляем ID если нет
-            if (!product.id) product.id = i;
-            
-            products.push(product);
+            if (hasData) {
+                product.id = i;
+                products.push(product);
+                console.log('➕ Added product:', product);
+            }
         }
         
         return products;
@@ -102,6 +138,8 @@ class HairShopCatalog {
         const lengths = this.products.map(p => p.length).filter(l => l > 0);
         const prices = this.products.map(p => p.price).filter(p => p > 0);
         
+        if (lengths.length === 0 || prices.length === 0) return;
+        
         this.filterRanges = {
             length: {
                 min: Math.min(...lengths),
@@ -113,114 +151,189 @@ class HairShopCatalog {
             }
         };
         
+        this.filters.minLength = this.filterRanges.length.min;
+        this.filters.maxLength = this.filterRanges.length.max;
+        this.filters.minPrice = this.filterRanges.price.min;
+        this.filters.maxPrice = this.filterRanges.price.max;
+        
         this.updateRangeSliders();
     }
 
     updateRangeSliders() {
         if (!this.filterRanges) return;
         
-        // Обновляем ползунки длины
+        // Длина
         const lengthMin = document.getElementById('lengthMin');
         const lengthMax = document.getElementById('lengthMax');
         if (lengthMin && lengthMax) {
             lengthMin.min = this.filterRanges.length.min;
             lengthMin.max = this.filterRanges.length.max;
-            lengthMin.value = this.filterRanges.length.min;
+            lengthMin.value = this.filters.minLength;
             
             lengthMax.min = this.filterRanges.length.min;
             lengthMax.max = this.filterRanges.length.max;
-            lengthMax.value = this.filterRanges.length.max;
+            lengthMax.value = this.filters.maxLength;
         }
         
-        // Обновляем ползунки цены
+        // Цена
         const priceMin = document.getElementById('priceMin');
         const priceMax = document.getElementById('priceMax');
         if (priceMin && priceMax) {
             priceMin.min = this.filterRanges.price.min;
             priceMin.max = this.filterRanges.price.max;
-            priceMin.value = this.filterRanges.price.min;
+            priceMin.value = this.filters.minPrice;
             
             priceMax.min = this.filterRanges.price.min;
             priceMax.max = this.filterRanges.price.max;
-            priceMax.value = this.filterRanges.price.max;
+            priceMax.value = this.filters.maxPrice;
         }
         
         this.updateRangeValues();
     }
 
     updateRangeValues() {
-        document.getElementById('lengthValue').textContent = 
-            `${this.filters.minLength}-${this.filters.maxLength} см`;
+        const lengthValue = document.getElementById('lengthValue');
+        const priceValue = document.getElementById('priceValue');
         
-        document.getElementById('priceValue').textContent = 
-            `${this.filters.minPrice}-${this.filters.maxPrice} ₽`;
+        if (lengthValue) {
+            lengthValue.textContent = `${this.filters.minLength}-${this.filters.maxLength} см`;
+        }
+        
+        if (priceValue) {
+            priceValue.textContent = `${this.filters.minPrice}-${this.filters.maxPrice} ₽`;
+        }
+    }
+
+    renderLoading() {
+        const container = document.getElementById('productsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Загрузка каталога...</p>
+                </div>
+            `;
+        }
+    }
+
+    renderNoProducts() {
+        const container = document.getElementById('productsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="no-products">
+                    <h3>📝 Каталог пуст</h3>
+                    <p>Добавьте товары в Google Sheets таблицу</p>
+                    <p><small>Ссылка на таблицу: <a href="https://docs.google.com/spreadsheets/d/1YOUR_SHEET_ID" target="_blank">редактировать</a></small></p>
+                </div>
+            `;
+        }
+    }
+
+    renderError(message) {
+        const container = document.getElementById('productsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="error-message">
+                    <h3>😕 Ошибка загрузки</h3>
+                    <p>${message || 'Не удалось загрузить каталог'}</p>
+                    <button onclick="catalog.loadProductsFromCSV()" class="btn-primary">
+                        🔄 Попробовать снова
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    renderProducts(products = this.products) {
+        const container = document.getElementById('productsContainer');
+        if (!container) return;
+
+        if (products.length === 0) {
+            this.renderNoProducts();
+            return;
+        }
+
+        container.innerHTML = products.map(product => `
+            <div class="product-card">
+                <div class="product-image">
+                    ${product.images && product.images !== 'images' ? 
+                        `<img src="${product.images}" alt="${product.name}" 
+                              onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
+                         <div class="image-placeholder" style="display:none">💇‍♀️</div>` : 
+                        '<div class="image-placeholder">💇‍♀️</div>'}
+                </div>
+                <div class="product-info">
+                    <h3>${product.name || 'Без названия'}</h3>
+                    <div class="product-meta">
+                        <div>${product.category || ''}</div>
+                        <div>${product.length || ''} см | ${product.color || ''}</div>
+                        <div>${product.texture || ''} | ${product.weight || ''}</div>
+                    </div>
+                    <div class="product-price">
+                        ${product.price ? product.price.toLocaleString() + ' ₽' : 'Цена не указана'}
+                        ${product.old_price ? 
+                            `<span class="product-old-price">${product.old_price.toLocaleString()} ₽</span>` : 
+                            ''}
+                    </div>
+                    <button class="btn-primary" onclick="catalog.addToCart(${product.id})">
+                        🛒 В корзину
+                    </button>
+                </div>
+            </div>
+        `).join('');
     }
 
     setupEventListeners() {
-        // Ползунки длины
+        // Ползунки
         const lengthMin = document.getElementById('lengthMin');
         const lengthMax = document.getElementById('lengthMax');
-        if (lengthMin && lengthMax) {
-            lengthMin.addEventListener('input', (e) => {
-                this.filters.minLength = parseInt(e.target.value);
-                if (this.filters.minLength > this.filters.maxLength) {
-                    this.filters.maxLength = this.filters.minLength;
-                    lengthMax.value = this.filters.maxLength;
-                }
-                this.updateRangeValues();
-                this.applyFilters();
-            });
-            
-            lengthMax.addEventListener('input', (e) => {
-                this.filters.maxLength = parseInt(e.target.value);
-                if (this.filters.maxLength < this.filters.minLength) {
-                    this.filters.minLength = this.filters.maxLength;
-                    lengthMin.value = this.filters.minLength;
-                }
-                this.updateRangeValues();
-                this.applyFilters();
-            });
-        }
-
-        // Ползунки цены
         const priceMin = document.getElementById('priceMin');
         const priceMax = document.getElementById('priceMax');
-        if (priceMin && priceMax) {
-            priceMin.addEventListener('input', (e) => {
-                this.filters.minPrice = parseInt(e.target.value);
-                if (this.filters.minPrice > this.filters.maxPrice) {
-                    this.filters.maxPrice = this.filters.minPrice;
-                    priceMax.value = this.filters.maxPrice;
-                }
-                this.updateRangeValues();
-                this.applyFilters();
-            });
-            
-            priceMax.addEventListener('input', (e) => {
-                this.filters.maxPrice = parseInt(e.target.value);
-                if (this.filters.maxPrice < this.filters.minPrice) {
-                    this.filters.minPrice = this.filters.maxPrice;
-                    priceMin.value = this.filters.minPrice;
-                }
-                this.updateRangeValues();
-                this.applyFilters();
-            });
-        }
-
-        // Цвета
-        const colorFilter = document.getElementById('colorFilter');
-        if (colorFilter) {
-            colorFilter.addEventListener('change', (e) => {
-                this.filters.colors = Array.from(e.target.selectedOptions).map(opt => opt.value);
-                this.applyFilters();
-            });
-        }
-
+        
+        if (lengthMin) lengthMin.addEventListener('input', (e) => this.handleLengthChange(e, 'min'));
+        if (lengthMax) lengthMax.addEventListener('input', (e) => this.handleLengthChange(e, 'max'));
+        if (priceMin) priceMin.addEventListener('input', (e) => this.handlePriceChange(e, 'min'));
+        if (priceMax) priceMax.addEventListener('input', (e) => this.handlePriceChange(e, 'max'));
+        
         // Кнопки
         const applyBtn = document.getElementById('applyFilters');
         const resetBtn = document.getElementById('resetFilters');
         if (applyBtn) applyBtn.addEventListener('click', () => this.applyFilters());
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetFilters());
+    }
+
+    handleLengthChange(e, type) {
+        const value = parseInt(e.target.value);
+        this.filters[type === 'min' ? 'minLength' : 'maxLength'] = value;
+        
+        // Синхронизируем ползунки
+        if (type === 'min' && value > this.filters.maxLength) {
+            this.filters.maxLength = value;
+            document.getElementById('lengthMax').value = value;
+        } else if (type === 'max' && value < this.filters.minLength) {
+            this.filters.minLength = value;
+            document.getElementById('lengthMin').value = value;
+        }
+        
+        this.updateRangeValues();
+        this.applyFilters();
+    }
+
+    handlePriceChange(e, type) {
+        const value = parseInt(e.target.value);
+        this.filters[type === 'min' ? 'minPrice' : 'maxPrice'] = value;
+        
+        // Синхронизируем ползунки
+        if (type === 'min' && value > this.filters.maxPrice) {
+            this.filters.maxPrice = value;
+            document.getElementById('priceMax').value = value;
+        } else if (type === 'max' && value < this.filters.minPrice) {
+            this.filters.minPrice = value;
+            document.getElementById('priceMin').value = value;
+        }
+        
+        this.updateRangeValues();
+        this.applyFilters();
     }
 
     applyFilters() {
@@ -241,80 +354,26 @@ class HairShopCatalog {
     }
 
     resetFilters() {
-        this.filters = {
-            minLength: this.filterRanges.length.min,
-            maxLength: this.filterRanges.length.max,
-            minPrice: this.filterRanges.price.min,
-            maxPrice: this.filterRanges.price.max,
-            colors: []
-        };
-        
-        this.updateRangeSliders();
-        this.applyFilters();
-    }
-
-    renderProducts(products = this.products) {
-        const container = document.getElementById('productsContainer');
-        if (!container) {
-            console.error('❌ Products container not found');
-            return;
+        if (this.filterRanges) {
+            this.filters = {
+                minLength: this.filterRanges.length.min,
+                maxLength: this.filterRanges.length.max,
+                minPrice: this.filterRanges.price.min,
+                maxPrice: this.filterRanges.price.max,
+                colors: []
+            };
+            
+            this.updateRangeSliders();
+            this.applyFilters();
         }
-
-        if (products.length === 0) {
-            container.innerHTML = '<div class="no-products">Товары не найдены</div>';
-            return;
-        }
-
-        container.innerHTML = products.map(product => `
-            <div class="product-card">
-                <div class="product-image">
-                    ${product.images ? 
-                        `<img src="${product.images}" alt="${product.name}" 
-                              onerror="this.style.display='none'; this.parentElement.innerHTML='💇‍♀️'">` : 
-                        '💇‍♀️'}
-                </div>
-                <div class="product-info">
-                    <h3>${product.name}</h3>
-                    <div class="product-meta">
-                        <div>${product.category}</div>
-                        <div>${product.length} см | ${product.color}</div>
-                        <div>${product.texture} | ${product.weight}</div>
-                    </div>
-                    <div class="product-price">
-                        ${product.price.toLocaleString()} ₽
-                        ${product.old_price ? 
-                            `<span class="product-old-price">${product.old_price.toLocaleString()} ₽</span>` : 
-                            ''}
-                    </div>
-                    <button class="btn-primary" onclick="catalog.addToCart(${product.id})">
-                        🛒 В корзину
-                    </button>
-                </div>
-            </div>
-        `).join('');
     }
 
     addToCart(productId) {
-        alert(`Товар добавлен в корзину! ID: ${productId}`);
-    }
-
-    showErrorMessage() {
-        const container = document.getElementById('productsContainer');
-        if (container) {
-            container.innerHTML = `
-                <div class="error-message">
-                    <h3>😕 Не удалось загрузить каталог</h3>
-                    <p>Проверьте подключение к интернету</p>
-                    <button onclick="catalog.loadProductsFromCSV()" class="btn-primary">
-                        🔄 Попробовать снова
-                    </button>
-                </div>
-            `;
-        }
+        alert(`Товар #${productId} добавлен в корзину!`);
     }
 }
 
-// Инициализация при загрузке страницы
+// Запускаем каталог
 document.addEventListener('DOMContentLoaded', function() {
     window.catalog = new HairShopCatalog();
 });
