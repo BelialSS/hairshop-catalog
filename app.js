@@ -1,9 +1,15 @@
+/**
+ * Класс HairShopCatalog управляет загрузкой данных, фильтрацией и отображением товаров.
+ */
 class HairShopCatalog {
     constructor() {
-        // Используем CORS прокси для обхода блокировки
-        this.CSV_URL = "https://corsproxy.io/?https://docs.google.com/spreadsheets/d/e/2PACX-1vS800Y_zN10Ys9uQfkEB67ZqlWMobbZTAkIu4l4X-a2rp1e80jlrFfhQV1m18n5hHCBANXc7VjRhIo5/pub?output=csv";
+        // РЕКОМЕНДАЦИЯ: Используем прямую ссылку на CSV-экспорт для опубликованной таблицы.
+        // ЭТО РАБОТАЕТ, ТОЛЬКО ЕСЛИ ТАБЛИЦА "15KZ6DHJD4zin2nATxLG-xBGx-BClYWUDAY_mW0VIwoM"
+        // ПУБЛИЧНО ДОСТУПНА (Файл -> Поделиться -> Опубликовать в Интернете)
+        this.CSV_URL = "https://docs.google.com/spreadsheets/d/15KZ6DHJD4zin2nATxLG-xBGx-BClYWUDAY_mW0VIwoM/export?format=csv&gid=0";
         
         this.products = [];
+        this.filterRanges = null; // Для хранения минимальных/максимальных значений
         this.filters = {
             minLength: 14,
             maxLength: 30,
@@ -15,274 +21,285 @@ class HairShopCatalog {
         this.init();
     }
 
+    /**
+     * Инициализация приложения: показывает загрузку, загружает данные и настраивает события.
+     */
     async init() {
-        // Показываем заглушку сразу
         this.renderLoading();
         await this.loadProductsFromCSV();
         this.setupEventListeners();
     }
 
+    /**
+     * Загрузка и парсинг данных из Google Таблицы в формате CSV.
+     */
     async loadProductsFromCSV() {
         try {
-            console.log('📥 Loading from:', this.CSV_URL);
+            console.log('📥 Загрузка данных из:', this.CSV_URL);
+            
             const response = await fetch(this.CSV_URL);
             
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                throw new Error(`Ошибка HTTP! Статус: ${response.status}. Проверьте доступ к CSV-файлу.`);
             }
             
             const csvText = await response.text();
-            console.log('📄 CSV content:', csvText.substring(0, 200));
-            
             this.products = this.parseCSV(csvText);
-            console.log('✅ Parsed products:', this.products);
             
-            if (this.products.length > 0) {
-                this.updateFilterRanges();
-                this.renderProducts();
-            } else {
-                this.renderNoProducts();
+            if (this.products.length === 0) {
+                 this.renderError('Не удалось загрузить или разобрать товары. Проверьте структуру CSV и заголовки.');
+                 return;
             }
             
+            this.initializeFilters();
+            this.applyFilters();
+            console.log('✅ Данные успешно загружены и готовы к отображению.');
+
         } catch (error) {
-            console.error('❌ Error loading CSV:', error);
-            this.renderError(error.message);
+            console.error('❌ Ошибка при загрузке каталога:', error);
+            this.renderError(`Ошибка загрузки данных: ${error.message}`);
         }
     }
 
+    /**
+     * Парсинг CSV-строки в массив объектов.
+     * Ожидаемые заголовки: id, name, length, price, oldPrice, color, imageUrl
+     */
     parseCSV(csvText) {
-        const lines = csvText.split('\n').filter(line => line.trim().length > 0);
-        console.log('📝 Total lines:', lines.length);
-        
-        if (lines.length < 2) {
-            console.warn('⚠️ Not enough lines in CSV');
-            return [];
-        }
-        
-        // Парсим заголовки
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
-        console.log('🏷 Headers:', headers);
-        
+        const lines = csvText.split('\n').filter(line => line.trim() !== '');
+        if (lines.length < 2) return [];
+
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
         const products = [];
-        
+
         for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            
-            const values = this.parseCSVLine(line);
-            console.log(`📊 Line ${i}:`, values);
-            
-            if (values.length !== headers.length) {
-                console.warn(`⚠️ Line ${i} has ${values.length} values, expected ${headers.length}`);
-                continue;
-            }
-            
-            const product = {};
-            let hasData = false;
-            
-            headers.forEach((header, index) => {
-                let value = values[index] ? values[index].trim().replace(/"/g, '') : '';
-                
-                // Пропускаем пустые строки
-                if (value === '' && header !== 'old_price') {
-                    return;
-                }
-                
-                hasData = true;
-                
-                // Конвертируем типы данных
-                if (header === 'length' || header === 'price') {
-                    value = parseInt(value) || 0;
-                } else if (header === 'old_price') {
-                    value = value ? parseInt(value) : null;
-                }
-                
-                product[header] = value;
-            });
-            
-            if (hasData) {
-                product.id = i;
+            const values = this.parseCSVLine(lines[i]);
+            if (values.length === headers.length) {
+                const product = {};
+                headers.forEach((header, index) => {
+                    // Используем .trim() для удаления лишних пробелов
+                    const value = values[index].trim();
+                    
+                    if (header === 'id') {
+                        product[header] = value;
+                    } else if (header === 'length' || header === 'price' || header === 'oldPrice') {
+                        // Преобразуем числовые поля, убирая все, кроме цифр
+                        product[header] = parseInt(value.replace(/[^\d]/g, ''), 10) || 0;
+                    } else {
+                        product[header] = value;
+                    }
+                });
                 products.push(product);
-                console.log('➕ Added product:', product);
             }
         }
-        
         return products;
     }
-
+    
+    /**
+     * Парсинг строки CSV с учетом кавычек.
+     */
     parseCSVLine(line) {
-        const result = [];
-        let current = '';
+        const values = [];
         let inQuotes = false;
-        
+        let currentField = '';
+
         for (let i = 0; i < line.length; i++) {
             const char = line[i];
-            
+
             if (char === '"') {
-                inQuotes = !inQuotes;
+                // Обработка экранированных кавычек ("" -> ")
+                if (inQuotes && line[i + 1] === '"') {
+                    currentField += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
             } else if (char === ',' && !inQuotes) {
-                result.push(current);
-                current = '';
+                values.push(currentField);
+                currentField = '';
             } else {
-                current += char;
+                currentField += char;
             }
         }
-        
-        result.push(current);
-        return result;
+        values.push(currentField); // Добавляем последнее поле
+        return values;
     }
 
-    updateFilterRanges() {
+
+    /**
+     * Определяет начальные (минимальные и максимальные) диапазоны фильтров.
+     */
+    initializeFilters() {
         if (this.products.length === 0) return;
-        
-        const lengths = this.products.map(p => p.length).filter(l => l > 0);
-        const prices = this.products.map(p => p.price).filter(p => p > 0);
-        
-        if (lengths.length === 0 || prices.length === 0) return;
-        
+
+        const allLengths = this.products.map(p => p.length);
+        const allPrices = this.products.map(p => p.price);
+
+        const minLength = Math.min(...allLengths);
+        const maxLength = Math.max(...allLengths);
+        const minPrice = Math.min(...allPrices);
+        const maxPrice = Math.max(...allPrices);
+
         this.filterRanges = {
-            length: {
-                min: Math.min(...lengths),
-                max: Math.max(...lengths)
-            },
-            price: {
-                min: Math.min(...prices),
-                max: Math.max(...prices)
-            }
+            length: { min: minLength, max: maxLength },
+            price: { min: minPrice, max: maxPrice }
+        };
+
+        // Устанавливаем текущие фильтры по начальным диапазонам
+        this.filters = {
+            minLength: minLength,
+            maxLength: maxLength,
+            minPrice: minPrice,
+            maxPrice: maxPrice,
+            colors: []
         };
         
-        this.filters.minLength = this.filterRanges.length.min;
-        this.filters.maxLength = this.filterRanges.length.max;
-        this.filters.minPrice = this.filterRanges.price.min;
-        this.filters.maxPrice = this.filterRanges.price.max;
-        
         this.updateRangeSliders();
+        this.updateRangeLabels();
     }
 
+    /**
+     * Настраивает ползунки на основе текущих значений фильтров.
+     */
     updateRangeSliders() {
-        if (!this.filterRanges) return;
-        
+        const { length, price } = this.filterRanges;
+
         // Длина
-        const lengthMin = document.getElementById('lengthMin');
-        const lengthMax = document.getElementById('lengthMax');
-        if (lengthMin && lengthMax) {
-            lengthMin.min = this.filterRanges.length.min;
-            lengthMin.max = this.filterRanges.length.max;
-            lengthMin.value = this.filters.minLength;
-            
-            lengthMax.min = this.filterRanges.length.min;
-            lengthMax.max = this.filterRanges.length.max;
-            lengthMax.value = this.filters.maxLength;
-        }
+        const lengthMinInput = document.getElementById('lengthMin');
+        const lengthMaxInput = document.getElementById('lengthMax');
         
+        if (lengthMinInput && lengthMaxInput) {
+             lengthMinInput.min = length.min;
+             lengthMinInput.max = length.max;
+             lengthMinInput.value = this.filters.minLength;
+             
+             lengthMaxInput.min = length.min;
+             lengthMaxInput.max = length.max;
+             lengthMaxInput.value = this.filters.maxLength;
+        }
+
         // Цена
-        const priceMin = document.getElementById('priceMin');
-        const priceMax = document.getElementById('priceMax');
-        if (priceMin && priceMax) {
-            priceMin.min = this.filterRanges.price.min;
-            priceMin.max = this.filterRanges.price.max;
-            priceMin.value = this.filters.minPrice;
-            
-            priceMax.min = this.filterRanges.price.min;
-            priceMax.max = this.filterRanges.price.max;
-            priceMax.value = this.filters.maxPrice;
+        const priceMinInput = document.getElementById('priceMin');
+        const priceMaxInput = document.getElementById('priceMax');
+        
+        if (priceMinInput && priceMaxInput) {
+             priceMinInput.min = price.min;
+             priceMinInput.max = price.max;
+             priceMinInput.value = this.filters.minPrice;
+             
+             priceMaxInput.min = price.min;
+             priceMaxInput.max = price.max;
+             priceMaxInput.value = this.filters.maxPrice;
         }
         
-        this.updateRangeValues();
+        // Сбрасываем селект цвета
+        const colorSelect = document.getElementById('colorFilter');
+        if (colorSelect) {
+            Array.from(colorSelect.options).forEach(option => {
+                option.selected = false;
+            });
+        }
     }
-
-    updateRangeValues() {
-        const lengthValue = document.getElementById('lengthValue');
-        const priceValue = document.getElementById('priceValue');
-        
-        if (lengthValue) {
-            lengthValue.textContent = `${this.filters.minLength}-${this.filters.maxLength} см`;
+    
+    /**
+     * Обновляет текстовые подписи над ползунками.
+     */
+    updateRangeLabels() {
+        const lengthValueSpan = document.getElementById('lengthValue');
+        if (lengthValueSpan) {
+            lengthValueSpan.textContent = `${this.filters.minLength}-${this.filters.maxLength} см`;
         }
         
-        if (priceValue) {
-            priceValue.textContent = `${this.filters.minPrice}-${this.filters.maxPrice} ₽`;
+        const priceValueSpan = document.getElementById('priceValue');
+        if (priceValueSpan) {
+            priceValueSpan.textContent = `${this.filters.minPrice}-${this.filters.maxPrice} ₽`;
         }
     }
 
-    renderLoading() {
-        const container = document.getElementById('productsContainer');
-        if (container) {
-            container.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Загрузка каталога...</p>
-                </div>
-            `;
-        }
-    }
 
-    renderNoProducts() {
+    /**
+     * Рендеринг всех карточек товаров.
+     */
+    renderProducts(products) {
         const container = document.getElementById('productsContainer');
-        if (container) {
-            container.innerHTML = `
-                <div class="no-products">
-                    <h3>📝 Каталог пуст</h3>
-                    <p>Добавьте товары в Google Sheets таблицу</p>
-                    <p><small>Ссылка на таблицу: <a href="https://docs.google.com/spreadsheets/d/1YOUR_SHEET_ID" target="_blank">редактировать</a></small></p>
-                </div>
-            `;
-        }
-    }
-
-    renderError(message) {
-        const container = document.getElementById('productsContainer');
-        if (container) {
-            container.innerHTML = `
-                <div class="error-message">
-                    <h3>😕 Ошибка загрузки</h3>
-                    <p>${message || 'Не удалось загрузить каталог'}</p>
-                    <button onclick="catalog.loadProductsFromCSV()" class="btn-primary">
-                        🔄 Попробовать снова
-                    </button>
-                </div>
-            `;
-        }
-    }
-
-    renderProducts(products = this.products) {
-        const container = document.getElementById('productsContainer');
-        if (!container) return;
-
-        if (products.length === 0) {
-            this.renderNoProducts();
+        if (!container) {
+            console.error('❌ Контейнер "productsContainer" не найден в DOM.');
             return;
         }
 
-        container.innerHTML = products.map(product => `
-            <div class="product-card">
+        if (products.length === 0) {
+            container.innerHTML = `<p class="no-results">По вашим фильтрам ничего не найдено. Попробуйте сбросить фильтры.</p>`;
+            return;
+        }
+
+        container.innerHTML = products.map(product => this.createProductCard(product)).join('');
+
+        // Добавляем обработчики кнопок после рендеринга
+        container.querySelectorAll('.add-to-cart').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const productId = e.currentTarget.dataset.id;
+                this.addToCart(productId);
+            });
+        });
+    }
+
+    /**
+     * Создает HTML-разметку для одной карточки товара.
+     */
+    createProductCard(product) {
+        // Проверяем, есть ли старая цена для отображения скидки
+        const hasDiscount = product.oldPrice && product.oldPrice > product.price;
+        const priceDisplay = hasDiscount 
+            ? `<span class="product-price">${product.price.toLocaleString()} ₽</span>
+               <span class="product-old-price">${product.oldPrice.toLocaleString()} ₽</span>`
+            : `<span class="product-price">${product.price.toLocaleString()} ₽</span>`;
+
+        return `
+            <div class="product-card" data-id="${product.id}">
                 <div class="product-image">
-                    ${product.images && product.images !== 'images' ? 
-                        `<img src="${product.images}" alt="${product.name}" 
-                              onerror="this.style.display='none'; this.nextElementSibling.style.display='block'">
-                         <div class="image-placeholder" style="display:none">💇‍♀️</div>` : 
-                        '<div class="image-placeholder">💇‍♀️</div>'}
+                    <!-- Заглушка, так как изображение может быть недоступно -->
+                    <img src="${product.imageUrl || 'https://placehold.co/400x200/e3f2fd/607d8b?text=Hair+Mockup'}" 
+                         alt="${product.name}" 
+                         onerror="this.onerror=null; this.src='https://placehold.co/400x200/e3f2fd/607d8b?text=No+Image';">
                 </div>
                 <div class="product-info">
-                    <h3>${product.name || 'Без названия'}</h3>
+                    <h3>${product.name || 'Название не указано'}</h3>
                     <div class="product-meta">
-                        <div>${product.category || ''}</div>
-                        <div>${product.length || ''} см | ${product.color || ''}</div>
-                        <div>${product.texture || ''} | ${product.weight || ''}</div>
+                        <span>Длина: ${product.length || 'N/A'} см</span>
+                        <span>Цвет: ${product.color || 'N/A'}</span>
                     </div>
-                    <div class="product-price">
-                        ${product.price ? product.price.toLocaleString() + ' ₽' : 'Цена не указана'}
-                        ${product.old_price ? 
-                            `<span class="product-old-price">${product.old_price.toLocaleString()} ₽</span>` : 
-                            ''}
-                    </div>
-                    <button class="btn-primary" onclick="catalog.addToCart(${product.id})">
-                        🛒 В корзину
+                    ${priceDisplay}
+                    <button class="btn-primary add-to-cart" data-id="${product.id}">
+                        Добавить в корзину
                     </button>
                 </div>
             </div>
-        `).join('');
+        `;
     }
 
+    /**
+     * Отображает сообщение о загрузке.
+     */
+    renderLoading() {
+        const container = document.getElementById('productsContainer');
+        if (container) {
+            container.innerHTML = `<p class="loading-message">Загрузка каталога... ⏳</p>`;
+        }
+    }
+    
+    /**
+     * Отображает сообщение об ошибке.
+     */
+    renderError(message) {
+        const container = document.getElementById('productsContainer');
+        if (container) {
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+    }
+
+    /**
+     * Настройка всех обработчиков событий для фильтров.
+     */
     setupEventListeners() {
         // Ползунки
         const lengthMin = document.getElementById('lengthMin');
@@ -290,10 +307,21 @@ class HairShopCatalog {
         const priceMin = document.getElementById('priceMin');
         const priceMax = document.getElementById('priceMax');
         
-        if (lengthMin) lengthMin.addEventListener('input', (e) => this.handleLengthChange(e, 'min'));
-        if (lengthMax) lengthMax.addEventListener('input', (e) => this.handleLengthChange(e, 'max'));
-        if (priceMin) priceMin.addEventListener('input', (e) => this.handlePriceChange(e, 'min'));
-        if (priceMax) priceMax.addEventListener('input', (e) => this.handlePriceChange(e, 'max'));
+        if (lengthMin && lengthMax) {
+            lengthMin.addEventListener('input', () => this.handleRangeInput('length', 'min', parseInt(lengthMin.value, 10)));
+            lengthMax.addEventListener('input', () => this.handleRangeInput('length', 'max', parseInt(lengthMax.value, 10)));
+        }
+        
+        if (priceMin && priceMax) {
+            priceMin.addEventListener('input', () => this.handleRangeInput('price', 'min', parseInt(priceMin.value, 10)));
+            priceMax.addEventListener('input', () => this.handleRangeInput('price', 'max', parseInt(priceMax.value, 10)));
+        }
+        
+        // Мультиселект по цвету (НОВЫЙ ОБРАБОТЧИК)
+        const colorFilter = document.getElementById('colorFilter');
+        if (colorFilter) {
+            colorFilter.addEventListener('change', () => this.updateColorFilters());
+        }
         
         // Кнопки
         const applyBtn = document.getElementById('applyFilters');
@@ -302,48 +330,64 @@ class HairShopCatalog {
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetFilters());
     }
 
-    handleLengthChange(e, type) {
-        const value = parseInt(e.target.value);
-        this.filters[type === 'min' ? 'minLength' : 'maxLength'] = value;
-        
-        // Синхронизируем ползунки
-        if (type === 'min' && value > this.filters.maxLength) {
-            this.filters.maxLength = value;
-            document.getElementById('lengthMax').value = value;
-        } else if (type === 'max' && value < this.filters.minLength) {
-            this.filters.minLength = value;
-            document.getElementById('lengthMin').value = value;
+    /**
+     * Обработчик для ползунков диапазона, который предотвращает инверсию.
+     */
+    handleRangeInput(type, boundary, value) {
+        if (type === 'length') {
+            if (boundary === 'min' && value > this.filters.maxLength) {
+                value = this.filters.maxLength;
+            } else if (boundary === 'max' && value < this.filters.minLength) {
+                value = this.filters.minLength;
+            }
+            this.filters[boundary === 'min' ? 'minLength' : 'maxLength'] = value;
+        } else if (type === 'price') {
+            if (boundary === 'min' && value > this.filters.maxPrice) {
+                value = this.filters.maxPrice;
+            } else if (boundary === 'max' && value < this.filters.minPrice) {
+                value = this.filters.minPrice;
+            }
+            this.filters[boundary === 'min' ? 'minPrice' : 'maxPrice'] = value;
         }
         
-        this.updateRangeValues();
+        // Убеждаемся, что HTML-ползунок соответствует исправленному значению
+        const inputId = `${type}${boundary === 'min' ? 'Min' : 'Max'}`;
+        document.getElementById(inputId).value = value;
+        
+        this.updateRangeLabels();
+        // Применяем фильтры сразу, чтобы видеть изменения
+        this.applyFilters();
+    }
+    
+    /**
+     * Обрабатывает изменение мультиселекта "Цвет". (НОВЫЙ МЕТОД)
+     */
+    updateColorFilters() {
+        const selectElement = document.getElementById('colorFilter');
+        if (!selectElement) return;
+
+        // Собираем значения всех выбранных <option>
+        this.filters.colors = Array.from(selectElement.selectedOptions).map(option => option.value.trim());
+        
         this.applyFilters();
     }
 
-    handlePriceChange(e, type) {
-        const value = parseInt(e.target.value);
-        this.filters[type === 'min' ? 'minPrice' : 'maxPrice'] = value;
-        
-        // Синхронизируем ползунки
-        if (type === 'min' && value > this.filters.maxPrice) {
-            this.filters.maxPrice = value;
-            document.getElementById('priceMax').value = value;
-        } else if (type === 'max' && value < this.filters.minPrice) {
-            this.filters.minPrice = value;
-            document.getElementById('priceMin').value = value;
-        }
-        
-        this.updateRangeValues();
-        this.applyFilters();
-    }
 
+    /**
+     * Применение всех текущих фильтров к каталогу.
+     */
     applyFilters() {
         const filteredProducts = this.products.filter(product => {
+            // Фильтр по длине
             const lengthMatch = product.length >= this.filters.minLength && 
                               product.length <= this.filters.maxLength;
             
+            // Фильтр по цене
             const priceMatch = product.price >= this.filters.minPrice && 
                              product.price <= this.filters.maxPrice;
             
+            // Фильтр по цвету
+            // Если массив filters.colors пуст, считаем совпадением (true)
             const colorMatch = this.filters.colors.length === 0 || 
                              this.filters.colors.includes(product.color);
             
@@ -353,27 +397,37 @@ class HairShopCatalog {
         this.renderProducts(filteredProducts);
     }
 
+    /**
+     * Сброс всех фильтров к начальным значениям.
+     */
     resetFilters() {
         if (this.filterRanges) {
+            // Сброс числовых фильтров к крайним значениям диапазона
             this.filters = {
                 minLength: this.filterRanges.length.min,
                 maxLength: this.filterRanges.length.max,
                 minPrice: this.filterRanges.price.min,
                 maxPrice: this.filterRanges.price.max,
-                colors: []
+                colors: [] // Сброс цвета
             };
             
             this.updateRangeSliders();
+            this.updateRangeLabels();
             this.applyFilters();
+            
+            console.log('✅ Фильтры сброшены к начальным значениям.');
         }
     }
 
+    /**
+     * Имитация добавления товара в корзину (заменено на console.log).
+     */
     addToCart(productId) {
-        alert(`Товар #${productId} добавлен в корзину!`);
+        console.log(`🛒 Товар #${productId} добавлен в корзину!`);
     }
 }
 
-// Запускаем каталог
+// Запускаем каталог при загрузке DOM
 document.addEventListener('DOMContentLoaded', function() {
     window.catalog = new HairShopCatalog();
 });
