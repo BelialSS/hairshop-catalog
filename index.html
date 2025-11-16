@@ -1,91 +1,42 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hair Shop - Волосы для наращивания</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="container">
-        <header class="header">
-            <h1>💇‍♀️ Hair Shop</h1>
-            <p>Премиальные волосы для наращивания</p>
-        </header>
-
-        <div class="main-content">
-            <aside class="sidebar">
-                <div class="filter-section">
-                    <h3>🔍 Фильтры</h3>
-                    
-                    <div class="filter-group">
-                        <label>Категория:</label>
-                        <select id="categoryFilter">
-                            <option value="">Все категории</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Длина:</label>
-                        <select id="lengthFilter">
-                            <option value="">Все длины</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Цвет:</label>
-                        <select id="colorFilter">
-                            <option value="">Все цвета</option>
-                        </select>
-                    </div>
-                    
-                    <div class="filter-group">
-                        <label>Цена:</label>
-                        <div class="price-range">
-                            <input type="number" id="minPrice" placeholder="От">
-                            <input type="number" id="maxPrice" placeholder="До">
-                        </div>
-                    </div>
-                    
-                    <button id="applyFilters" class="btn-primary">Применить фильтры</button>
-                    <button id="resetFilters" class="btn-secondary">Сбросить</button>
-                </div>
-            </aside>
-
-            <main class="products-grid">
-                <div class="products-header">
-                    <h2>Каталог волос</h2>
-                    <div class="sort-options">
-                        <select id="sortSelect">
-                            <option value="name">По названию</option>
-                            <option value="price_asc">По цене (возр.)</option>
-                            <option value="price_desc">По цене (убыв.)</option>
-                            <option value="rating">По рейтингу</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div id="productsContainer" class="products-container">
-                    <!-- Товары будут загружены через JavaScript -->
-                </div>
-                
-                <div class="pagination">
-                    <button id="prevPage" class="btn-secondary">← Назад</button>
-                    <span id="pageInfo">Страница 1</span>
-                    <button id="nextPage" class="btn-secondary">Вперед →</button>
-                </div>
-            </main>
+<div class="filter-section">
+    <h3>🔍 Фильтры</h3>
+    
+    <!-- Ползунок длины -->
+    <div class="filter-group">
+        <label>📏 Длина: <span id="lengthValue">14-30 см</span></label>
+        <div class="range-slider">
+            <input type="range" id="lengthMin" min="14" max="30" value="14" class="slider">
+            <input type="range" id="lengthMax" min="14" max="30" value="30" class="slider">
+        </div>
+        <div class="range-labels">
+            <span>14 см</span>
+            <span>30 см</span>
         </div>
     </div>
-
-    <!-- Модальное окно товара -->
-    <div id="productModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <div id="productDetails"></div>
+    
+    <!-- Ползунок цены -->
+    <div class="filter-group">
+        <label>💰 Цена: <span id="priceValue">1000-10000 ₽</span></label>
+        <div class="range-slider">
+            <input type="range" id="priceMin" min="1000" max="10000" value="1000" class="slider">
+            <input type="range" id="priceMax" min="1000" max="10000" value="10000" class="slider">
+        </div>
+        <div class="range-labels">
+            <span>1000 ₽</span>
+            <span>10000 ₽</span>
         </div>
     </div>
-
-    <script src="app.js"></script>
-</body>
-</html>
+    
+    <!-- Остальные фильтры -->
+    <div class="filter-group">
+        <label>🎨 Цвет:</label>
+        <select id="colorFilter" multiple class="multi-select">
+            <option value="Натуральные">Натуральные</option>
+            <option value="Окрашенные">Окрашенные</option>
+            <option value="Омбре">Омбре</option>
+        </select>
+    </div>
+    
+    <button id="applyFilters" class="btn-primary">Применить фильтры</button>
+    <button id="resetFilters" class="btn-secondary">Сбросить</button>
+</div>
